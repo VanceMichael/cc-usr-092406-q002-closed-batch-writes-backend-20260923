@@ -1,9 +1,34 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import inspect, text
 from .database import engine, Base
-from .routers import ponds, batches, stocking, feeding, water_quality, medication, costs, harvest, analysis
+from .routers import ponds, batches, stocking, feeding, water_quality, medication, costs, harvest, analysis, review_queue
 
 Base.metadata.create_all(bind=engine)
+
+def ensure_schema():
+    """为存量数据库补齐新增列（create_all 不会修改已有表）。"""
+    with engine.begin() as conn:
+        inspector = inspect(conn)
+        tables = set(inspector.get_table_names())
+
+        def missing_column(table, column):
+            if table not in tables:
+                return False
+            return column not in {c["name"] for c in inspector.get_columns(table)}
+
+        if missing_column("batches", "closed_at"):
+            conn.execute(text("ALTER TABLE batches ADD COLUMN closed_at DATETIME"))
+        for table in (
+            "stocking_records", "feeding_records", "water_quality_records",
+            "medication_records", "cost_records", "harvest_sales",
+        ):
+            if missing_column(table, "review_status"):
+                conn.execute(
+                    text(f"ALTER TABLE {table} ADD COLUMN review_status VARCHAR(20) NOT NULL DEFAULT 'clear'")
+                )
+
+ensure_schema()
 
 app = FastAPI(
     title="水产养殖管理系统",
@@ -28,6 +53,7 @@ app.include_router(medication.router)
 app.include_router(costs.router)
 app.include_router(harvest.router)
 app.include_router(analysis.router)
+app.include_router(review_queue.router)
 
 @app.get("/")
 def root():

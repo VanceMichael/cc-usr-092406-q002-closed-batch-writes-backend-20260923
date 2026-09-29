@@ -3,6 +3,19 @@ from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
 
+#: 业务记录的复核状态取值
+REVIEW_STATUS_CLEAR = "clear"        # 正常记录，参与分析与追溯
+REVIEW_STATUS_PENDING = "pending"    # 待裁定（越界隔离或关闭后更正），默认排除
+REVIEW_STATUS_APPROVED = "approved"  # 复核通过，参与分析与追溯
+REVIEW_STATUS_REJECTED = "rejected"  # 复核驳回，持续排除
+
+REVIEW_STATUSES = (
+    REVIEW_STATUS_CLEAR,
+    REVIEW_STATUS_PENDING,
+    REVIEW_STATUS_APPROVED,
+    REVIEW_STATUS_REJECTED,
+)
+
 class Pond(Base):
     __tablename__ = "ponds"
 
@@ -28,6 +41,7 @@ class Batch(Base):
     estimated_harvest_date = Column(Date, comment="预计收获日期")
     actual_harvest_date = Column(Date, comment="实际收获日期")
     status = Column(String(20), default="active", comment="状态: active, harvested, closed")
+    closed_at = Column(DateTime, comment="关闭时间(结算冻结点)")
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -38,6 +52,7 @@ class Batch(Base):
     medication_records = relationship("MedicationRecord", back_populates="batch")
     cost_records = relationship("CostRecord", back_populates="batch")
     harvest_sales = relationship("HarvestSale", back_populates="batch")
+    settlement_versions = relationship("SettlementVersion", back_populates="batch")
 
 class StockingRecord(Base):
     __tablename__ = "stocking_records"
@@ -51,6 +66,7 @@ class StockingRecord(Base):
     weight_per_unit = Column(Float, comment="单重(克/尾)")
     total_weight = Column(Float, comment="总重量(公斤)")
     notes = Column(Text, comment="备注")
+    review_status = Column(String(20), default=REVIEW_STATUS_CLEAR, nullable=False, index=True, comment="复核状态: clear, pending, approved, rejected")
     created_at = Column(DateTime, default=datetime.utcnow)
 
     batch = relationship("Batch", back_populates="stocking_records")
@@ -67,6 +83,7 @@ class FeedingRecord(Base):
     weather = Column(String(50), comment="天气情况")
     water_temperature = Column(Float, comment="水温(℃)")
     notes = Column(Text, comment="备注")
+    review_status = Column(String(20), default=REVIEW_STATUS_CLEAR, nullable=False, index=True, comment="复核状态: clear, pending, approved, rejected")
     created_at = Column(DateTime, default=datetime.utcnow)
 
     batch = relationship("Batch", back_populates="feeding_records")
@@ -85,6 +102,7 @@ class WaterQualityRecord(Base):
     nitrite = Column(Float, comment="亚硝酸盐(mg/L)")
     transparency = Column(Float, comment="透明度(cm)")
     notes = Column(Text, comment="备注")
+    review_status = Column(String(20), default=REVIEW_STATUS_CLEAR, nullable=False, index=True, comment="复核状态: clear, pending, approved, rejected")
     created_at = Column(DateTime, default=datetime.utcnow)
 
     batch = relationship("Batch", back_populates="water_quality_records")
@@ -104,6 +122,7 @@ class MedicationRecord(Base):
     manufacturer = Column(String(200), comment="生产厂家")
     batch_number = Column(String(50), comment="药品批次号")
     notes = Column(Text, comment="备注")
+    review_status = Column(String(20), default=REVIEW_STATUS_CLEAR, nullable=False, index=True, comment="复核状态: clear, pending, approved, rejected")
     created_at = Column(DateTime, default=datetime.utcnow)
 
     batch = relationship("Batch", back_populates="medication_records")
@@ -121,6 +140,7 @@ class CostRecord(Base):
     unit = Column(String(20), comment="单位")
     unit_price = Column(Float, comment="单价")
     notes = Column(Text, comment="备注")
+    review_status = Column(String(20), default=REVIEW_STATUS_CLEAR, nullable=False, index=True, comment="复核状态: clear, pending, approved, rejected")
     created_at = Column(DateTime, default=datetime.utcnow)
 
     batch = relationship("Batch", back_populates="cost_records")
@@ -138,6 +158,44 @@ class HarvestSale(Base):
     batch_number = Column(String(50), comment="追溯批次号")
     quality_grade = Column(String(50), comment="质量等级")
     notes = Column(Text, comment="备注")
+    review_status = Column(String(20), default=REVIEW_STATUS_CLEAR, nullable=False, index=True, comment="复核状态: clear, pending, approved, rejected")
     created_at = Column(DateTime, default=datetime.utcnow)
 
     batch = relationship("Batch", back_populates="harvest_sales")
+
+class SettlementVersion(Base):
+    """批次关闭时冻结的结算版本。每个批次至多一个版本，request_id 为幂等键。"""
+
+    __tablename__ = "settlement_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    batch_id = Column(Integer, ForeignKey("batches.id"), unique=True, nullable=False, index=True)
+    version_no = Column(Integer, nullable=False, default=1, comment="结算版本号")
+    request_id = Column(String(64), unique=True, nullable=False, index=True, comment="关闭请求幂等键")
+    closed_by = Column(String(100), comment="关闭操作人")
+    note = Column(Text, comment="关闭备注")
+    closed_at = Column(DateTime, nullable=False, comment="关闭时间")
+    quarantined_count = Column(Integer, nullable=False, default=0, comment="关闭时隔离的越界记录数")
+    snapshot = Column(Text, nullable=False, comment="冻结的周期分析与追溯快照(JSON)")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    batch = relationship("Batch", back_populates="settlement_versions")
+
+class ReviewQueueItem(Base):
+    """可恢复的复核队列：历史越界/关闭后写入的记录在此等待裁定。"""
+
+    __tablename__ = "review_queue_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    batch_id = Column(Integer, ForeignKey("batches.id"), nullable=False, index=True)
+    record_type = Column(String(30), nullable=False, comment="记录类型: stocking, feeding, water_quality, medication, cost, harvest_sale")
+    record_id = Column(Integer, comment="关联记录主键")
+    operation = Column(String(20), nullable=False, comment="操作: quarantine, create, update, delete")
+    reason = Column(String(50), nullable=False, comment="入队原因: out_of_cycle_bounds, post_close_correction")
+    payload = Column(Text, comment="记录快照或拟变更内容(JSON)")
+    status = Column(String(20), default="pending", nullable=False, index=True, comment="状态: pending, approved, rejected")
+    submitted_by = Column(String(100), comment="提交人")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    decided_at = Column(DateTime, comment="裁定时间")
+    decided_by = Column(String(100), comment="裁定人")
+    decision_note = Column(Text, comment="裁定备注")

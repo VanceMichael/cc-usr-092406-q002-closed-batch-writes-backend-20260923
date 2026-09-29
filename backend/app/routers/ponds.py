@@ -15,7 +15,7 @@ def create_pond(pond: PondCreate, db: Session = Depends(get_db)):
     db_pond = db.query(Pond).filter(Pond.name == pond.name).first()
     if db_pond:
         raise HTTPException(status_code=400, detail="塘口名称已存在")
-    new_pond = Pond(**pond.dict())
+    new_pond = Pond(**pond.model_dump())
     db.add(new_pond)
     db.commit()
     db.refresh(new_pond)
@@ -39,7 +39,7 @@ def update_pond(pond_id: int, pond: PondUpdate, db: Session = Depends(get_db)):
     if not db_pond:
         raise HTTPException(status_code=404, detail="塘口不存在")
     
-    update_data = pond.dict(exclude_unset=True)
+    update_data = pond.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(db_pond, key, value)
     

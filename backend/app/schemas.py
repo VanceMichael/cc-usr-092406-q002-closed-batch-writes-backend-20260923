@@ -25,7 +25,7 @@ class PondResponse(PondBase):
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class BatchBase(BaseModel):
     batch_number: str
@@ -50,11 +50,12 @@ class BatchUpdate(BaseModel):
 
 class BatchResponse(BatchBase):
     id: int
+    closed_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class StockingRecordBase(BaseModel):
     batch_id: int
@@ -81,10 +82,11 @@ class StockingRecordUpdate(BaseModel):
 
 class StockingRecordResponse(StockingRecordBase):
     id: int
+    review_status: str = "clear"
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class FeedingRecordBase(BaseModel):
     batch_id: int
@@ -111,10 +113,11 @@ class FeedingRecordUpdate(BaseModel):
 
 class FeedingRecordResponse(FeedingRecordBase):
     id: int
+    review_status: str = "clear"
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class WaterQualityRecordBase(BaseModel):
     batch_id: int
@@ -145,10 +148,11 @@ class WaterQualityRecordUpdate(BaseModel):
 
 class WaterQualityRecordResponse(WaterQualityRecordBase):
     id: int
+    review_status: str = "clear"
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class MedicationRecordBase(BaseModel):
     batch_id: int
@@ -181,10 +185,11 @@ class MedicationRecordUpdate(BaseModel):
 
 class MedicationRecordResponse(MedicationRecordBase):
     id: int
+    review_status: str = "clear"
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class CostRecordBase(BaseModel):
     batch_id: int
@@ -213,10 +218,11 @@ class CostRecordUpdate(BaseModel):
 
 class CostRecordResponse(CostRecordBase):
     id: int
+    review_status: str = "clear"
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class HarvestSaleBase(BaseModel):
     batch_id: int
@@ -245,10 +251,11 @@ class HarvestSaleUpdate(BaseModel):
 
 class HarvestSaleResponse(HarvestSaleBase):
     id: int
+    review_status: str = "clear"
     created_at: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class CostSummaryItem(BaseModel):
     type: str
@@ -278,6 +285,8 @@ class CultureCycleAnalysis(BaseModel):
     profit: float
     cost_summary: Optional[dict] = None
     feeding_summary: Optional[dict] = None
+    version_no: Optional[int] = None
+    frozen_at: Optional[datetime] = None
 
 class StockingRecordTrace(BaseModel):
     species: str
@@ -339,3 +348,56 @@ class BatchTraceability(BaseModel):
     medication_records: List[MedicationRecordTrace] = []
     cost_records: List[CostRecordTrace] = []
     harvest_sales: List[HarvestSaleTrace] = []
+    version_no: Optional[int] = None
+    frozen_at: Optional[datetime] = None
+
+class BatchCloseRequest(BaseModel):
+    request_id: Optional[str] = None
+    closed_by: Optional[str] = None
+    note: Optional[str] = None
+
+class SettlementVersionResponse(BaseModel):
+    id: int
+    batch_id: int
+    version_no: int
+    request_id: str
+    closed_by: Optional[str] = None
+    note: Optional[str] = None
+    closed_at: datetime
+    quarantined_count: int = 0
+    snapshot: dict = {}
+
+class BatchCloseResponse(BaseModel):
+    batch_id: int
+    batch_number: str
+    status: str
+    already_closed: bool
+    settlement: SettlementVersionResponse
+
+class CorrectionRequest(BaseModel):
+    record_type: str
+    operation: str
+    record_id: Optional[int] = None
+    payload: Optional[dict] = None
+    submitted_by: Optional[str] = None
+    note: Optional[str] = None
+
+class ReviewQueueItemResponse(BaseModel):
+    id: int
+    batch_id: int
+    record_type: str
+    record_id: Optional[int] = None
+    operation: str
+    reason: str
+    payload: Optional[dict] = None
+    status: str
+    submitted_by: Optional[str] = None
+    created_at: datetime
+    decided_at: Optional[datetime] = None
+    decided_by: Optional[str] = None
+    decision_note: Optional[str] = None
+
+class ReviewDecisionRequest(BaseModel):
+    decision: str
+    decided_by: Optional[str] = None
+    note: Optional[str] = None
