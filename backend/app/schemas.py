@@ -50,11 +50,65 @@ class BatchUpdate(BaseModel):
 
 class BatchResponse(BatchBase):
     id: int
+    closed_at: Optional[datetime] = None
+    current_version: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 
     class Config:
         orm_mode = True
+
+
+class SettlementVersionInfo(BaseModel):
+    version_id: int
+    version: int
+    trigger: str
+    batch_id: int
+    batch_current_version: Optional[int] = None
+    created_at: Optional[datetime] = None
+    metrics: Optional[dict] = None
+
+
+class BatchCloseResponse(BaseModel):
+    idempotent: bool
+    batch_id: int
+    status: str
+    pending_count: Optional[int] = None
+    version: SettlementVersionInfo
+
+
+class ReviewItemResponse(BaseModel):
+    id: int
+    batch_id: int
+    record_type: str
+    operation: str
+    record_id: Optional[int] = None
+    reason: str
+    business_date: Optional[date] = None
+    payload: dict
+    status: str
+    resolution_note: Optional[str] = None
+    resolved_by: Optional[str] = None
+    created_at: datetime
+    resolved_at: Optional[datetime] = None
+
+    class Config:
+        orm_mode = True
+
+
+class ReviewDecision(BaseModel):
+    decision: str  # approved / rejected
+    note: Optional[str] = None
+    actor: Optional[str] = None
+
+
+class ReviewResolveResponse(BaseModel):
+    review_item_id: int
+    decision: str
+    batch_id: int
+    batch_status: str
+    effective_data_changed: bool
+    new_version: Optional[SettlementVersionInfo] = None
 
 class StockingRecordBase(BaseModel):
     batch_id: int

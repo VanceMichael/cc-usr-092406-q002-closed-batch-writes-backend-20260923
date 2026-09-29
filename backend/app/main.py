@@ -1,9 +1,17 @@
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from .database import engine, Base
-from .routers import ponds, batches, stocking, feeding, water_quality, medication, costs, harvest, analysis
+from .database import engine, WriterSessionLocal
+from .routers import (
+    ponds, batches, stocking, feeding, water_quality, medication,
+    costs, harvest, analysis, review,
+)
+from .services.lifecycle import ensure_schema, migrate_legacy_records
 
-Base.metadata.create_all(bind=engine)
+# 建表 / 为存量 SQLite 补齐生命周期列，随后收容历史越界数据（幂等）。
+ensure_schema(engine)
+if os.getenv("LIFECYCLE_MIGRATE_ON_STARTUP", "1") == "1":
+    migrate_legacy_records(WriterSessionLocal)
 
 app = FastAPI(
     title="水产养殖管理系统",
@@ -28,6 +36,8 @@ app.include_router(medication.router)
 app.include_router(costs.router)
 app.include_router(harvest.router)
 app.include_router(analysis.router)
+app.include_router(review.router)
+app.include_router(review.versions_router)
 
 @app.get("/")
 def root():

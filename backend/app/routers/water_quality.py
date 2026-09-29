@@ -2,8 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from ..database import get_db
-from ..models import WaterQualityRecord, Batch
+from ..models import WaterQualityRecord
 from ..schemas import WaterQualityRecordCreate, WaterQualityRecordUpdate, WaterQualityRecordResponse
+from ._guard import submit_create, submit_update, submit_delete
+from ..services.lifecycle import LifecycleError
+
+RECORD_TYPE = "water_quality"
 
 router = APIRouter(
     prefix="/api/water-quality-records",
@@ -11,16 +15,11 @@ router = APIRouter(
 )
 
 @router.post("/", response_model=WaterQualityRecordResponse)
-def create_water_quality_record(record: WaterQualityRecordCreate, db: Session = Depends(get_db)):
-    db_batch = db.query(Batch).filter(Batch.id == record.batch_id).first()
-    if not db_batch:
-        raise HTTPException(status_code=404, detail="批次不存在")
-    
-    new_record = WaterQualityRecord(**record.dict())
-    db.add(new_record)
-    db.commit()
-    db.refresh(new_record)
-    return new_record
+def create_water_quality_record(record: WaterQualityRecordCreate):
+    try:
+        return submit_create(RECORD_TYPE, record.dict())
+    except LifecycleError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
 
 @router.get("/", response_model=List[WaterQualityRecordResponse])
 def get_water_quality_records(skip: int = 0, limit: int = 100, batch_id: int = None, db: Session = Depends(get_db)):
@@ -38,25 +37,16 @@ def get_water_quality_record(record_id: int, db: Session = Depends(get_db)):
     return record
 
 @router.put("/{record_id}/", response_model=WaterQualityRecordResponse)
-def update_water_quality_record(record_id: int, record: WaterQualityRecordUpdate, db: Session = Depends(get_db)):
-    db_record = db.query(WaterQualityRecord).filter(WaterQualityRecord.id == record_id).first()
-    if not db_record:
-        raise HTTPException(status_code=404, detail="水质监测记录不存在")
-    
-    update_data = record.dict(exclude_unset=True)
-    for key, value in update_data.items():
-        setattr(db_record, key, value)
-    
-    db.commit()
-    db.refresh(db_record)
-    return db_record
+def update_water_quality_record(record_id: int, record: WaterQualityRecordUpdate):
+    try:
+        return submit_update(RECORD_TYPE, record_id, record.dict(exclude_unset=True))
+    except LifecycleError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)
 
 @router.delete("/{record_id}/")
-def delete_water_quality_record(record_id: int, db: Session = Depends(get_db)):
-    db_record = db.query(WaterQualityRecord).filter(WaterQualityRecord.id == record_id).first()
-    if not db_record:
-        raise HTTPException(status_code=404, detail="水质监测记录不存在")
-    
-    db.delete(db_record)
-    db.commit()
-    return {"message": "水质监测记录删除成功"}
+def delete_water_quality_record(record_id: int):
+    try:
+        quarantined = submit_delete(RECORD_TYPE, record_id)
+        return quarantined if quarantined is not None else {"message": "水质监测记录删除成功"}
+    except LifecycleError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail)

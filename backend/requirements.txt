@@ -4,3 +4,5 @@ sqlalchemy==2.0.23
 pydantic==2.5.2
 python-multipart==0.0.6
 aiofiles==23.2.1
+# 测试通过 fastapi.testclient（Starlette TestClient）驱动接口，0.28 与 FastAPI 0.104 不兼容
+httpx>=0.24,<0.28
